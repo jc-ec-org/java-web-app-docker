@@ -1,0 +1,28 @@
+node{
+    properties([buildDiscarder(logRotator(artifactDaysToKeepStr: '3', artifactNumToKeepStr: '', daysToKeepStr: '3', numToKeepStr: '')), pipelineTriggers([githubPush()])])
+    def buildNum=BUILD_NUMBER
+    stage("Git Clone"){
+        git url: "https://github.com/jc-ec-org/java-web-app-docker.git",branch: "master"
+    }
+    stage("Build Package"){
+        def maven_H=tool name: "Maven", type: "maven"
+        sh "${maven_H}/bin/mvn clean package"
+    }
+    stage("Build Docker Image"){
+        sh "docker build -t jcheeran/java-web-app-docker:${buildNum} ."
+    }
+    stage("Docker Login and Push")
+    {
+        withCredentials([string(credentialsId: 'DockerHubPwd', variable: 'DockerHubPwd')]) 
+        {
+         sh "docker login -u jcheeran -p ${DockerHubPwd}"
+        }
+       sh "docker push jcheeran/java-web-app-docker:${buildNum}"
+    }
+    stage("Deploy the Docker Image to Deployment Server"){
+        sshagent(['Docker_Deploy_Server']) {
+            sh "ssh -o StrictHostKeyChecking=No ubuntu@172.31.45.83 docker rm -f javawebappcontainer || true"
+            sh "ssh -o StrictHostKeyChecking=No ubuntu@172.31.45.83 docker run -d -p 8080:8080 --name javawebappcontainer jcheeran/java-web-app-docker:${buildNum}"
+        }
+    }
+}
